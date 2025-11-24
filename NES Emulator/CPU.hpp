@@ -5,34 +5,25 @@
 #include "typedef.hpp"
 #include <array>
 #include <vector>
-#include <cassert>
-#include <iostream>
-#include <bitset>
-#include "BUS.hpp"
-#include "ROM.hpp"
 #include <functional>
 #include <string>
+#include "BUS.hpp"
+#include "ROM.hpp"
 
 class CPU
 {
 
 public:
-	u8 register_a { 0 };
-	u8 register_x { 0 };
-	u8 register_y { 0 };
-	u8 status { 0b00100100 };
-	u16 program_counter { 0x8000 };
-	u8 stack_pointer { 0xFD };
+
 	BUS bus {};
-	int cycles { 0 };
-	bool NMI_enabled { false };
 
 	void load(std::string);
-	void load(std::vector<u8>&);
-
 	void reset();
+
+
+	// Execute next opcode / instruction
 	void execute();
-	void log();
+
 
 	// Tick when cycle complete
 	void tick();
@@ -43,6 +34,36 @@ public:
 	void write(u16 addr, u8 data);
 	u8 readStack(u16 addr);
 	void writeStack(u16 addr, u8 data);
+	void writeDMA(u8 data);
+
+	// Logging
+	void log();
+	void log_action();
+
+
+private:
+
+
+	// Registers
+	u8 register_a { 0 };
+	u8 register_x { 0 };
+	u8 register_y { 0 };
+	u8 status { 0b00100100 };
+
+
+	// Counters / pointers
+	u16 program_counter { 0x8000 };
+	u8 stack_pointer { 0xFD };
+	int cycles { 0 };
+
+
+	// NMI Management
+	bool NMI_found {};
+	int NMIcycle {};
+
+
+	// Record current opcode for use in debugging
+	u8 op_code {};
 
 
 	// Functions for setting status flags
@@ -88,11 +109,12 @@ public:
 
 
 	// Interrupt
+	void BRK();
 	void NMI();
+	void IRQ();
 
 
 	// Instructions Accessing Stack
-	void BRK();
 	void RTI();
 	void RTS();
 	void PHA();
@@ -164,9 +186,10 @@ public:
 	void TYA();
 
 
-    // Jump Instructions
+	// Jump Instructions
 	void abs_addressing_JMP();
 	void abs_indirect_addressing_JMP();
+
 };
 
 #endif

@@ -5,6 +5,7 @@
 #include <string_view>
 #include <fstream>
 #include <iostream>
+#include <algorithm>
 
 u8 ROM::read(u16 addr)
 {
@@ -38,6 +39,7 @@ ROM::ROM(std::vector<u8>& cartridge)
 	};
 
 	mapper = (cartridge[7] & 0b11110000) | (cartridge[6] >> 4);
+	std::cout << "Mapper type: " << mapper << "\n";
 
 	if ((cartridge[6] & 1) == 0 ) {
 		screen_mirroring = Mirroring::Horizantal;
@@ -73,6 +75,7 @@ ROM::ROM(std::string file_path) {
 
 
 	u8 mapper = (header[7] & 0b11110000) | (header[6] >> 4);
+	std::cout << "Mapper type: " << (int)mapper << "\n";
 
 	if ((header[6] & 1) == 0) {
 		screen_mirroring = Mirroring::Horizantal;
@@ -82,12 +85,14 @@ ROM::ROM(std::string file_path) {
 	}
 
 	const u8 prg_banks = header[4];
+	std::cout << "PRG Bank size: " << (int)prg_banks << "\n";
 	const u8 chr_banks = header[5];
+	std::cout << "CHR Bank size: " << (int)chr_banks << "\n";
 
 	const u8 trainer = ((header[6] & 0b100) != 0);
 
 	prg_rom.resize(prg_banks * 16384);
-	chr_rom.resize(chr_banks * 8192);
+	chr_rom.resize(std::max(chr_banks, (u8)1) * 8192);
 
 	if (prg_banks) {
 		file.read(reinterpret_cast<char*>(&prg_rom[0]), prg_banks * 16384);

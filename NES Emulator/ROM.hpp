@@ -6,10 +6,6 @@
 #include "typedef.hpp"
 #include <string>
 
-enum class Mirroring {
-	Horizantal,
-	Vertical
-};
 
 class ROM 
 {

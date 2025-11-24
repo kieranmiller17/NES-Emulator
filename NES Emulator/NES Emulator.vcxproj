@@ -74,6 +74,10 @@
     <IncludePath>C:\SDL2-2.26.3\include;$(IncludePath)</IncludePath>
     <LibraryPath>C:\SDL2-2.26.3\lib\x64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <IncludePath>C:\SDL2-2.26.3\include;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+    <LibraryPath>C:\SDL2-2.26.3\lib\x64;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -125,24 +129,35 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>SDL2.lib;SDL2main.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="BUS.cpp" />
+    <ClCompile Include="Controller.cpp" />
     <ClCompile Include="CPU.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Mapper.cpp" />
+    <ClCompile Include="Mapper.hpp" />
+    <ClCompile Include="MMC1.cpp" />
+    <ClCompile Include="MMC3.cpp" />
     <ClCompile Include="NES Emulator.cpp" />
+    <ClCompile Include="NROM.cpp" />
     <ClCompile Include="PPU.cpp" />
-    <ClCompile Include="ROM.cpp" />
-    <ClCompile Include="testing.cpp" />
+    <ClCompile Include="screen.cpp" />
+    <ClCompile Include="UxROM.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="BUS.hpp" />
+    <ClInclude Include="Controller.hpp" />
     <ClInclude Include="CPU.hpp" />
+    <ClInclude Include="MMC1.hpp" />
+    <ClInclude Include="MMC3.hpp" />
+    <ClInclude Include="NROM.hpp" />
     <ClInclude Include="PPU.hpp" />
-    <ClInclude Include="ROM.hpp" />
-    <ClInclude Include="testing.hpp" />
+    <ClInclude Include="screen.hpp" />
     <ClInclude Include="typedef.hpp" />
+    <ClInclude Include="UxROM.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

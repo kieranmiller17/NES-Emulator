@@ -3,20 +3,88 @@
 #include "typedef.hpp"
 #include <array>
 #include <vector>
-#include <cassert>
-#include <iostream>
-#include <bitset>
-#include "BUS.hpp"
-#include "CPU.hpp"
 #include <functional>
 #include <string>
+#include <iostream>
+#include <stdexcept>
+#include <fstream>
+
+#include "CPU.hpp"
+#include "NROM.hpp"
+#include "MMC1.hpp"
+#include "UxROM.hpp"
+#include "MMC3.hpp"
 
 void CPU::load(std::string path) {
-	bus.rom = ROM(path);
-}
 
-void CPU::load(std::vector<u8>& cartridge) {
-	bus.rom = ROM(cartridge);
+
+	std::vector<char> header {};
+	header.resize(16);
+
+	std::vector<u8> prg_rom;
+	std::vector<u8> chr_rom;
+	Mirroring screen_mirroring {};
+
+	std::ifstream file(path, std::ios_base::binary | std::ios_base::in);
+
+	file.read(&header[0], 16);
+
+	if (std::string { &header[0], &header[4] } != "NES\x1A") {
+		throw std::invalid_argument("not in iNES format");
+	}
+
+	u8 mapper = (header[7] & 0b11110000) | (header[6] >> 4);
+	std::cout << "Mapper type: " << (int)mapper << "\n";
+
+	if ((header[6] & 1) == 0) {
+		screen_mirroring = Mirroring::Horizantal;
+		std::cout << "Mirroring: Horizantal" << "\n";
+	}
+	else if ((header[6] & 1) == 1) {
+		screen_mirroring = Mirroring::Vertical;
+		std::cout << "Mirroring: Vertical" << "\n";
+	}
+
+
+	const u8 prg_banks = header[4];
+	std::cout << "PRG Bank size: " << (int)prg_banks << "\n";
+	const u8 chr_banks = header[5];
+	std::cout << "CHR Bank size: " << (int)chr_banks << "\n";
+
+	const u8 trainer = ((header[6] & 0b100) != 0);
+	std::cout << "Trainer: " << (int)trainer << "\n";
+
+	prg_rom.resize(prg_banks * 16384);
+	chr_rom.resize(std::max(chr_banks, (u8)1) * 8192);
+
+	if (prg_banks) {
+		file.read(reinterpret_cast<char*>(&prg_rom[0]), prg_banks * 16384);
+	}
+
+	if (chr_banks) {
+		file.read(reinterpret_cast<char*>(&chr_rom[0]), chr_banks * 8192);
+	}
+
+	switch (mapper) {
+	case 0:
+		bus.rom = new NROM(prg_rom, chr_rom, screen_mirroring);
+		break;
+	case 1:
+		bus.rom = new MMC1(prg_rom, chr_rom, screen_mirroring);
+		break;
+	case 2:
+		bus.rom = new UxROM(prg_rom, chr_rom, screen_mirroring);
+		break;
+	case 4:
+		bus.rom = new MMC3(prg_rom, chr_rom, screen_mirroring);
+		break;
+	default:
+		break;
+	}
+	
+	std::cout << "ROM Loaded Succesfully" << "\n";
+	bus.ppu = PPU(bus.rom, bus.rom->get_CHRrom());
+	std::cout << "PPU Loaded Succesfully" << "\n";
 }
 
 void CPU::reset() {
@@ -25,18 +93,34 @@ void CPU::reset() {
 	status = 0b00100100;
 	program_counter |= read(0xFFFC);
 	program_counter |= (read(0xFFFD) << 8);
+	bus.ppu.resetCycles();
 }
 
 void CPU::tick() {
+
+	if (bus.ppu.NMI_triggered()) {
+		NMI_found = true;
+		bus.ppu.set_NMI(false);
+	}
+
+	bus.ppu.tick(); bus.ppu.tick(); bus.ppu.tick();
 	cycles += 1;
 };
 
 u8 CPU::read(u16 addr) {
+
 	return bus.read(addr);
 };
 
 void CPU::write(u16 addr, u8 data) {
-	bus.write(addr, data);
+
+	if (addr == 0x4014) {
+		writeDMA(data);
+	}
+	else {
+
+		bus.write(addr, data);
+	}
 };
 
 u8 CPU::readStack(u16 addr) {
@@ -47,12 +131,26 @@ void CPU::writeStack(u16 addr, u8 data) {
 	bus.write(0x100 + addr, data);
 }
 
-void CPU::log() {
+void CPU::writeDMA(u8 data) {
+	if ((cycles % 2) == 0) { tick(); }
+	tick();
+
+	u16 dma_addr = data << 8;
+
+	for (int i { 0 }; i <= 255; i++) {
+		u8 res = read(dma_addr + i);
+		tick();
+		bus.ppu.writeDMA(res);
+		tick();
+	}
+}
+
+void CPU::log() { // Run CPU and log
 
 	u8 prev_counter {};
 	cycles = 7;
 
-	for (int i { 0 }; i <= 6000; i++) {
+	while (true) {
 		
 		prev_counter = program_counter;
 		std::cout << std::hex << (int)program_counter << "  ";
@@ -66,10 +164,31 @@ void CPU::log() {
 		std::cout << " Y:" << std::hex << (int)register_y << " ";
 		std::cout << " P:" << std::hex << (int)status << " ";
 		std::cout << " SP:" << std::hex << (int)stack_pointer << " ";
-		std::cout << " CYC:" << std::dec << (int)cycles << "\n";
+		std::cout << " CYC:" << std::dec << (int)cycles;
+		std::cout << " PPU CYC:" << (int)(bus.ppu.getCycles())  << "\n";
 		execute();
 
 	}
+}
+
+void CPU::log_action() { // Log the previous CPU instruction and register status to the console
+
+	std::cout << "scanline:  " << std::dec << (int)bus.ppu.getScanline();
+	std::cout << "dot:  "  << (int)bus.ppu.getDot() << "  ";
+	std::cout << std::hex << (int)program_counter << "  ";
+
+	for (int i { 0 }; i <= 2; i++) {
+		std::cout << std::hex << (int)read(program_counter + i) << " ";
+	}
+
+	std::cout << " A:" << std::hex << (int)register_a << " ";
+	std::cout << " X:" << std::hex << (int)register_x << " ";
+	std::cout << " Y:" << std::hex << (int)register_y << " ";
+	std::cout << " P:" << std::hex << (int)status << " ";
+	std::cout << " SP:" << std::hex << (int)stack_pointer << " ";
+	std::cout << " CYC:" << std::dec << (int)cycles;
+	std::cout << " PPU CYC:" << (int)(bus.ppu.getCycles() % 341) << " " << (int)(bus.ppu.getCycles() / 341) << "\n";
+
 }
 
 void CPU::setNegative(bool val) {
@@ -157,10 +276,11 @@ void CPU::relative_addressing(bool branch) {
 
 	if (!branch) { return; }; // Branch not taken
 
-	u16 old_counter { program_counter };
-	program_counter = old_counter + op;
+	s16 old_counter { program_counter & 0xFF};
+	program_counter += op;
 	tick(); // Tick 3
-	if (((old_counter & 0xFF) + op) > 0xFF) { tick(); }; // Tick 4 (if new page)
+
+	if ((u16)(old_counter + op) > 0xFF) { tick(); }; // Tick 4 (if new page)
 };
 
 void CPU::immediate_addressing(std::function<void (u8)> func ) {
@@ -259,7 +379,7 @@ void CPU::absolute_X_read_addressing(std::function<void (u8)> func) {
 	u16 addr = read(program_counter++); tick(); // Tick 2
 	addr |= (read(program_counter++) << 8); tick(); // Tick 3
 	u16 newaddr = addr + register_x;
-	if (((addr & 0xFF) + register_x) > 0xFF) { tick(); }; // Possible Tick 4
+	if (((addr + register_x) & 0xFF00) != (addr & 0xFF00)) { tick(); }; // Possible Tick 4
 	func(read(newaddr)); tick(); // Tick 4/5
 }
 
@@ -284,7 +404,7 @@ void CPU::absolute_Y_read_addressing(std::function<void (u8)> func) {
 	u16 addr = read(program_counter++); tick(); // Tick 2
 	addr |= (read(program_counter++) << 8); tick(); // Tick 3
 	u16 newaddr = addr + register_y;
-	if (((addr & 0xFF) + register_y) > 0xFF) { tick(); }; // Possible Tick 4
+	if (((addr + register_y) & 0xFF00) != (addr & 0xFF00)) { tick(); }; // Possible Tick 4
 	func(read(newaddr)); tick(); // Tick 4/5
 }
 
@@ -327,7 +447,7 @@ void CPU::indirect_Y_read_addressing(std::function<void (u8)> func) {
 	u16 addr = read(pointer++); tick(); // Tick 3
 	addr |= (read(pointer) << 8);
 	u16 newaddr = addr + register_y; tick(); // Tick 4
-	if (((addr & 0xFF) + register_y) > 0xFF) { tick(); }; // Tick 5
+	if (((addr + register_y) & 0xFF00) != (addr & 0xFF00)) { tick(); }; // Tick 5
 	func(read(newaddr)); tick(); // Tick 6
 }
 
@@ -360,6 +480,7 @@ void CPU::BRK() {
 	setBreak(true);
 	writeStack(stack_pointer--, program_counter & 0xFF); tick(); // Tick 4
 	writeStack(stack_pointer--, status); tick(); // Tick 5
+	setInterrupt(true);
 	program_counter = 0;
 	program_counter |= read(0xFFFE); tick(); // Tick 6
 	program_counter |= (read(0xFFFF) << 8); tick(); // Tick 7
@@ -373,7 +494,18 @@ void CPU::NMI() {
 	writeStack(stack_pointer--, status); tick(); // Tick 5
 	program_counter = 0;
 	program_counter |= read(0xFFFA); setInterrupt(true); tick(); // Tick 6
-	program_counter |= (read(0xFFFB) << 8); tick(); // Tick 7
+	program_counter |= (read(0xFFFB) << 8); tick(); // Tick 7 
+}
+
+void CPU::IRQ() {
+	tick(); tick(); // Tick 1, 2
+	writeStack(stack_pointer--, program_counter >> 8); tick(); // Tick 3
+	writeStack(stack_pointer--, program_counter & 0xFF); tick(); // Tick 4
+	setBreak(false);
+	writeStack(stack_pointer--, status); tick(); // Tick 5
+	program_counter = 0;
+	program_counter |= read(0xFFFE); setInterrupt(true); tick(); // Tick 6
+	program_counter |= (read(0xFFFF) << 8); tick(); // Tick 7 
 }
 
 void CPU::RTI() { // Not Tested
@@ -507,7 +639,7 @@ void CPU::ORA(u8 val) {
 	setNegativeAndZero(register_a);
 };
 
-void CPU::ADC(u8 val) { // Not tested
+void CPU::ADC(u8 val) {
 	u8 carry = status & 1;
 	u16 res = val + register_a + carry;
 	u8 overflow = (register_a ^ res) & (val ^ res) & 0x80;
@@ -709,7 +841,7 @@ void CPU::abs_addressing_JMP() {
 	program_counter = addr; tick(); // Tick 3
 }
 
-void CPU::abs_indirect_addressing_JMP() { // Not Tested
+void CPU::abs_indirect_addressing_JMP() { 
 	u16 pointer = read(program_counter++); tick(); // Tick 2
 	pointer |= (read(program_counter++) << 8); tick(); // Tick 3
 	u8 latch = read(pointer); tick(); // Tick 4
@@ -721,12 +853,20 @@ void CPU::execute() {
 
 	using namespace std::placeholders;
 
-	if (NMI_enabled) {
+
+	if (NMI_found) {
 		NMI();
-		return;
+		NMI_found = false;
 	};
 
-	u8 op_code = read(program_counter++);
+
+	if (bus.rom->IRQ_Active() && !(status & 4)) {
+		IRQ();
+		bus.rom->set_IRQ(false);
+	}
+
+	op_code = read(program_counter++);
+	
 	tick();
 
 	switch (op_code)
@@ -1185,6 +1325,13 @@ void CPU::execute() {
 		absolute_X_rmw_addressing(std::bind(&CPU::INC, this, _1));
 		break;
 	default:
-		return;
+		break;
 	}
+
+
+	if (bus.ppu.immediate_NMI_triggered()) {
+		bus.ppu.set_immediate_NMI(false);
+		bus.ppu.set_NMI(true);
+	}
+
 };

@@ -1,62 +1,66 @@
-/*
-#include <iostream>
-#include "CPU.hpp"
-#include "ROM.hpp"
-#include "testing.hpp"
-#include <vector>
-#include <fstream>
-*/
+
 
 
 #include "typedef.hpp"
 #include <iostream>
+#include <fstream>
+#include <string>
+
 #include <SDL.h>
-#undef main
+#include <stdio.h>
 
+#include "CPU.hpp"
+#include "ROM.hpp"
+#include "PPU.hpp"
+#include "screen.hpp"
 
-SDL_Window* win;
-SDL_Surface* surf;
+int main(int argc, char** argv) {
 
-int disp_init() {
+    std::string romPath;
+    std::cout <<  "Enter the ROM file path to start playing:\n";
 
-    if (SDL_Init(SDL_INIT_VIDEO)) {
-        return -1;
+    std::getline(std::cin, romPath);
+
+    std::ifstream file(romPath);
+
+    if (!file) {
+        std::cout << "Game ROM not found!";
+        return 1;
     }
 
-    win = SDL_CreateWindow("brightNES", 100, 100, 512, 480, SDL_WINDOW_SHOWN);
+    SDL_Event event;
+    bool is_running = true;
 
-    if (win == NULL) {
-        SDL_Quit();
-        return -1;
+    screen::init_screen();
+
+    CPU cpu {};
+    cpu.load(romPath);
+    cpu.reset();
+
+    while (is_running) {
+
+        cpu.execute();
+        
+        while (SDL_PollEvent(&event)) {
+            switch (event.type) {
+            case SDL_KEYDOWN:
+                cpu.bus.controller.pressButton(event.key.keysym.sym, 1);
+                break;
+            case SDL_KEYUP:
+                cpu.bus.controller.pressButton(event.key.keysym.sym, 0);
+                break;
+            case SDL_QUIT:
+                is_running = false;
+                break;
+            default:
+                break;
+            }
+        }
     }
 
-    surf = SDL_GetWindowSurface(win);
-
-    if (surf == NULL) {
-        SDL_DestroyWindow(win);
-        SDL_Quit();
-        return -1;
-    }
-
-    SDL_SetWindowFullscreen(win, SDL_WINDOW_FULLSCREEN);
+    screen::destroy_screen;
 
     return 0;
-}
-
-int disp_free() {
-    SDL_DestroyWindow(win);
-    return 0;
-}
-
-
-int main()
-{
-    disp_init();
-
-    SDL_Delay(30000);
-
-    disp_free();
-
-    return 0;
+    
 
 }
