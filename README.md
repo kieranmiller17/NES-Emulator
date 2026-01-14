@@ -1,7 +1,8 @@
  
-## Cycle-accurate NES emulator written in C++. Supported mappers: NROM, MMC1, UxROM, MMC3
+## Cycle-accurate NES emulator written in C++. 
+Supported mappers: NROM, MMC1, UxROM, MMC3
 
-Features: 
+### Features: 
 
 Instruction Stepped, Cycle Ticked CPU
 Cycle Ticked PPU
